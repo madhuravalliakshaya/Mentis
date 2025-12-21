@@ -8,20 +8,17 @@ dotenv.config();
 const app = express();
 app.use(cors());
 
-// Accept raw images
 app.use(
   express.raw({
-    type: ["image/png", "image/jpeg", "image/jpg"], // Accept all common image types
+    type: ["image/png", "image/jpeg", "image/jpg"], 
     limit: "10mb",
   })
 );
 
-// Vision OCR client
 const visionClient = new ImageAnnotatorClient({
   keyFilename: process.env.VISION_API_KEY,
 });
 
-// Dummy Gemini function (replace with Gemini API later)
 async function rankBooksWithPrompt(bookTitles, syllabus) {
   return bookTitles.map((title, i) => ({
     title,
@@ -30,7 +27,6 @@ async function rankBooksWithPrompt(bookTitles, syllabus) {
   }));
 }
 
-// -------------------- Endpoint --------------------
 app.post("/upload", async (req, res) => {
   try {
     const syllabus = req.headers["x-syllabus"]?.trim();
@@ -47,7 +43,6 @@ app.post("/upload", async (req, res) => {
       return res.status(400).json({ error: "Syllabus required" });
     }
 
-    // OCR
     const [result] = await visionClient.textDetection({
       image: { content: req.body },
     });
@@ -60,7 +55,7 @@ app.post("/upload", async (req, res) => {
       .map((line) => line.trim())
       .filter((line) => line.length > 0);
 
-    console.log("✅ OCR Titles:", bookTitles);
+    console.log("OCR Titles:", bookTitles);
 
     const rankedBooks = await rankBooksWithPrompt(bookTitles, syllabus);
     res.json({ rankedBooks });
@@ -71,5 +66,5 @@ app.post("/upload", async (req, res) => {
 });
 
 app.listen(3000, () =>
-  console.log("🚀 Server running on http://localhost:3000")
+  console.log(" Server running on http://localhost:3000")
 );
