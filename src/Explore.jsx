@@ -21,6 +21,10 @@ export default function App() {
     return <Login />;
   }
 
-  return <Search/>;
+  return (
+    <>
+    <h1>Welcome to Mentis</h1>
+    </>
+  )
   
 }
