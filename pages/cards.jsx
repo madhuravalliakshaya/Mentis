@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   collection,
@@ -7,140 +7,333 @@ import {
   onSnapshot,
   doc,
   runTransaction,
-  where
 } from "firebase/firestore";
 import { db } from "../src/firebase/firebaseConfig";
+import { QRCodeCanvas } from "qrcode.react";
+import { Html5QrcodeScanner } from "html5-qrcode";
 
 const getUserId = () => localStorage.getItem("userId");
 
 export default function Cards() {
   const navigate = useNavigate();
   const userId = getUserId();
-  const [requests, setRequests] = useState([]);
-  const [myActiveRequest, setMyActiveRequest] = useState(null);
 
-  // 🔹 Fetch all requests
+  const [requests, setRequests] = useState([]);
+  const [scanRequestId, setScanRequestId] = useState(null);
+  const scannerRef = useRef(null);
+  const scanLock = useRef(false);
+
+  /* ================= FETCH REQUESTS ================= */
   useEffect(() => {
-    const q = query(collection(db, "requests"), orderBy("timestamp", "desc"));
-    return onSnapshot(q, snap =>
-      setRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    );
+    const q = query(collection(db, "requests"), orderBy("createdAt", "desc"));
+    return onSnapshot(q, (snap) => {
+      setRequests(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
   }, []);
 
-  // 🔹 Check if user already has an active request
-  useEffect(() => {
-    const q = query(
-      collection(db, "requests"),
-      where("requesterId", "==", userId),
-      where("status", "!=", "completed")
-    );
-    return onSnapshot(q, snap => {
-      setMyActiveRequest(snap.docs.length > 0);
-    });
-  }, [userId]);
-
-  // 🔹 Handle card click
+  /* ================= ACCEPT REQUEST ================= */
   const handleHelp = async (req) => {
-    // 🚫 requester cannot help themselves
+    if (!userId) return alert("Login required");
     if (req.requesterId === userId) return;
 
-    // Already taken
-    if (req.helperId && req.helperId !== userId) {
-      alert("Already taken by another helper");
-      return;
-    }
-
-    // Navigate if already helper
-    if (req.helperId === userId) {
-      navigate(`/chat/${req.id}`);
-      return;
-    }
-
-    // Take request safely
     try {
       await runTransaction(db, async (tx) => {
         const ref = doc(db, "requests", req.id);
         const snap = await tx.get(ref);
 
-        if (snap.data().helperId) throw "taken";
+        if (!snap.exists()) return;
+        if (snap.data().helperId) throw new Error();
 
         tx.update(ref, {
           helperId: userId,
           status: "in_progress",
+          bookState: "requested",
         });
       });
 
       navigate(`/chat/${req.id}`);
     } catch {
-      alert("Someone already took this request");
+      alert("Request already taken");
     }
   };
 
-  const openChat = (id) => navigate(`/chat/${id}`);
+  /* ================= REQUESTER CLOSE (ONLY BEFORE BORROWED) ================= */
+  const closeRequest = async (req) => {
+    if (req.bookState === "borrowed") {
+      return alert("Cannot close while book is borrowed");
+    }
 
-  const completeRequest = async (req) => {
-    if (req.requesterId !== userId) return;
+    if (!window.confirm("Close this request permanently?")) return;
 
     await runTransaction(db, async (tx) => {
-      tx.update(doc(db, "requests", req.id), {
+      const ref = doc(db, "requests", req.id);
+      tx.update(ref, {
         status: "completed",
+        bookState: "closed",
       });
     });
-
-    alert("Request completed");
   };
 
+  /* ================= QR SCANNER (2-SCAN LOGIC) ================= */
+  useEffect(() => {
+    if (!scanRequestId) return;
+    scanLock.current = false;
+
+    const scanner = new Html5QrcodeScanner(
+      "qr-reader",
+      { fps: 10, qrbox: 220 },
+      false
+    );
+
+    scannerRef.current = scanner;
+
+    scanner.render(async (decodedText) => {
+      if (scanLock.current) return;
+      scanLock.current = true;
+
+      try {
+        const parsed = JSON.parse(decodedText);
+        if (parsed.requestId !== scanRequestId) {
+          alert("Wrong QR ❌");
+          scanLock.current = false;
+          return;
+        }
+
+        await runTransaction(db, async (tx) => {
+          const ref = doc(db, "requests", scanRequestId);
+          const snap = await tx.get(ref);
+          if (!snap.exists()) return;
+
+          const data = snap.data();
+          if (data.status === "completed") return;
+
+          /* ✅ EXACT 2-SCAN STATE MACHINE */
+          if (data.bookState === "requested") {
+            // Scan 1 → Book handed over
+            tx.update(ref, { bookState: "borrowed" });
+          } 
+          else if (data.bookState === "borrowed") {
+            // Scan 2 → Book returned, request completed
+            tx.update(ref, {
+              bookState: "returned",
+              status: "completed",
+            });
+          } 
+          else {
+            throw new Error("Invalid scan");
+          }
+        });
+
+        alert("Scan successful ✅");
+        scanner.clear();
+        setScanRequestId(null);
+      } catch {
+        alert("Invalid QR ❌");
+        scanLock.current = false;
+      }
+    });
+
+    return () => {
+      scanner.clear().catch(() => {});
+    };
+  }, [scanRequestId]);
+
+  /* ================= UI ================= */
   return (
-    <div style={{ maxWidth: 720, margin: "auto", padding: 20 }}>
-      <h2>📚 Book Requests</h2>
+    <div style={styles.page}>
+      <h1 style={styles.heading}>📚 Book Requests</h1>
 
-      {requests.map(req => {
-        const isRequester = req.requesterId === userId;
-        const isHelper = req.helperId === userId;
-        const isTaken = !!req.helperId;
-        const completed = req.status === "completed";
+      <div style={styles.grid}>
+        {requests.map((req) => {
+          const isRequester = req.requesterId === userId;
+          const isHelper = req.helperId === userId;
+          const closed = req.status === "completed";
 
-        return (
-          <div key={req.id} style={{
-            padding: 14,
-            marginBottom: 12,
-            borderRadius: 12,
-            background: completed ? "#e5e7eb" : "#fff7ed",
-            opacity: completed ? 0.6 : 1
-          }}>
-            <h4>{req.subject}</h4>
-            <p>{req.reason}</p>
-            <p>📍 {req.location}</p>
-            <p>Status: <b>{req.status}</b></p>
+          return (
+            <div key={req.id} style={styles.card}>
+              <h3>{req.subject}</h3>
+              <p>{req.reason}</p>
+              <p style={styles.meta}>📍 {req.location}</p>
 
-            {/* CHAT ACCESS */}
-            {(isRequester || isHelper) && (
-              <button onClick={() => openChat(req.id)}>Open Chat</button>
-            )}
+              <p>
+                <b>Status:</b>{" "}
+                {req.bookState === "requested" && "Waiting for pickup"}
+                {req.bookState === "borrowed" && "Book borrowed"}
+                {req.bookState === "returned" && "Completed"}
+                {req.bookState === "closed" && "Closed"}
+              </p>
 
-            {/* HELP BUTTON */}
-            {!isRequester && !isTaken && !completed && (
-              <button onClick={() => handleHelp(req)}>I Can Help</button>
-            )}
+              {!closed && (
+                <div style={styles.actions}>
+                  {!isRequester && !req.helperId && (
+                    <button
+                      style={styles.primaryBtn}
+                      onClick={() => handleHelp(req)}
+                    >
+                      🤝 Help
+                    </button>
+                  )}
 
-            {/* TAKEN */}
-            {!isRequester && isTaken && !isHelper && (
-              <button disabled>Taken</button>
-            )}
+                  {(isRequester || isHelper) && (
+                    <button
+                      style={styles.outlineBtn}
+                      onClick={() => navigate(`/chat/${req.id}`)}
+                    >
+                      💬 Chat
+                    </button>
+                  )}
 
-            {/* COMPLETE */}
-            {isRequester && req.status === "given" && (
-              <button
-                onClick={() => completeRequest(req)}
-                style={{ marginLeft: 10, background: "#22c55e", color: "#fff" }}
-              >
-                Complete
-              </button>
-            )}
-          </div>
-        );
-      })}
+                  {isRequester && (
+                    <>
+                      <div style={styles.qrBox}>
+                        <QRCodeCanvas
+                          value={JSON.stringify({ requestId: req.id })}
+                          size={140}
+                        />
+                      </div>
+
+                      <button
+                        style={styles.dangerBtn}
+                        onClick={() => closeRequest(req)}
+                      >
+                        🔒 Close Request
+                      </button>
+                    </>
+                  )}
+
+                  {isHelper && (
+                    <button
+                      style={styles.scanBtn}
+                      onClick={() => setScanRequestId(req.id)}
+                    >
+                      📷 Scan
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {closed && <div style={styles.overlay}>🔒 Completed</div>}
+            </div>
+          );
+        })}
+      </div>
+
+      {scanRequestId && (
+        <div style={styles.scannerWrap}>
+          <h3 style={{ color: "#fff" }}>Scan Requester QR</h3>
+          <div id="qr-reader" style={{ width: "100%", maxWidth: 320 }} />
+          <button
+            style={styles.cancelBtn}
+            onClick={() => setScanRequestId(null)}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
+/* ================= STYLES ================= */
+const styles = {
+  page: {
+    minHeight: "100vh",
+    padding: 16,
+    background: "linear-gradient(135deg,#fff7ed,#fef3c7)",
+  },
+  heading: {
+    textAlign: "center",
+    marginBottom: 20,
+    color: "#b45309",
+  },
+  grid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))",
+    gap: 16,
+    maxWidth: 1100,
+    margin: "auto",
+  },
+  card: {
+    position: "relative",
+    background: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    boxShadow: "0 8px 20px rgba(0,0,0,0.08)",
+  },
+  meta: { fontSize: 13, opacity: 0.7 },
+  actions: {
+    marginTop: 12,
+    display: "flex",
+    flexDirection: "column",
+    gap: 10,
+  },
+  primaryBtn: {
+    width: "100%",
+    background: "#f59e0b",
+    border: "none",
+    borderRadius: 12,
+    padding: 10,
+    cursor: "pointer",
+  },
+  outlineBtn: {
+    width: "100%",
+    border: "2px solid #f59e0b",
+    background: "transparent",
+    borderRadius: 12,
+    padding: 10,
+    cursor: "pointer",
+  },
+  scanBtn: {
+    width: "100%",
+    background: "#22c55e",
+    border: "none",
+    borderRadius: 12,
+    padding: 10,
+    cursor: "pointer",
+  },
+  dangerBtn: {
+    width: "100%",
+    background: "#ef4444",
+    color: "#fff",
+    border: "none",
+    borderRadius: 12,
+    padding: 10,
+    cursor: "pointer",
+  },
+  qrBox: {
+    display: "flex",
+    justifyContent: "center",
+  },
+  overlay: {
+    position: "absolute",
+    inset: 0,
+    background: "rgba(15,23,42,0.85)",
+    borderRadius: 16,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: 700,
+  },
+  scannerWrap: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.85)",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    zIndex: 1000,
+    padding: 16,
+  },
+  cancelBtn: {
+    background: "#ef4444",
+    color: "#fff",
+    border: "none",
+    borderRadius: 14,
+    padding: "10px 18px",
+    cursor: "pointer",
+  },
+};

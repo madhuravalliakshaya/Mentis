@@ -1,0 +1,44 @@
+type Student @table {
+  firstName: String!
+  lastName: String!
+  email: String!
+  studentId: String!
+  major: String!
+  year: Int!
+  createdAt: Timestamp!
+  bio: String
+  profilePictureUrl: String
+  interests: [String]
+}
+
+type Connection @table(key: ["sender", "receiver"]) {
+  sender: Student!
+  receiver: Student!
+  status: String!
+  createdAt: Timestamp!
+}
+
+type StudyGroup @table {
+  name: String!
+  owner: Student!
+  createdAt: Timestamp!
+  description: String
+  courseCode: String
+  visibility: String
+}
+
+type GroupMember @table(key: ["group", "student"]) {
+  group: StudyGroup!
+  student: Student!
+  joinedAt: Timestamp!
+}
+
+type Post @table {
+  student: Student!
+  content: String!
+  createdAt: Timestamp!
+  group: StudyGroup
+  fileUrl: String
+  fileType: String
+  title: String
+}

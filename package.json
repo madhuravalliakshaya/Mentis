@@ -11,6 +11,7 @@
     "proxy": "http://localhost:5000"
   },
   "dependencies": {
+    "@dataconnect/generated": "file:src/dataconnect-generated",
     "@google-cloud/aiplatform": "^6.0.0",
     "@google-cloud/language": "^7.2.1",
     "@google-cloud/vision": "^5.3.4",
@@ -20,6 +21,8 @@
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "firebase": "^12.7.0",
+    "html5-qrcode": "^2.3.8",
+    "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.11.0"

@@ -3,41 +3,120 @@ import { collection, onSnapshot } from "firebase/firestore";
 import { db } from "../src/firebase/firebaseConfig";
 import { useNavigate } from "react-router-dom";
 
-export default function NgoList() {
-  const [ngos, setNgos] = useState([]);
+export default function ReceiverList() {
+  const [receivers, setReceivers] = useState([]);
   const navigate = useNavigate();
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "ngos"), (snap) => {
-      setNgos(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      setReceivers(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
     return () => unsub();
   }, []);
 
-  if (!ngos.length) return <p style={{padding: 20}}>No NGOs found</p>;
+  if (!receivers.length)
+    return <p style={{ padding: 20, textAlign: "center" }}>No receivers found</p>;
 
   return (
-    <div style={{ maxWidth: 720, margin: "auto", padding: 20 }}>
-      <h2>NGO List</h2>
-      {ngos.map(ngo => (
-        <div key={ngo.id} style={{ marginBottom: 12, padding: 12, border: "1px solid #ccc", borderRadius: 8 }}>
-          <h3>{ngo.name}</h3>
-          <p><strong>City:</strong> {ngo.city}</p>
-          <p>{ngo.description}</p>
-          <div>
-            <strong>Needs:</strong>{" "}
-            {Array.isArray(ngo.needs) 
-              ? ngo.needs.map((n, i) => <span key={i} style={{marginRight: 6}}>{n}</span>) 
-              : "No needs specified"}
+    <div style={styles.page}>
+      <h2 style={styles.heading}>🤲 People & Organizations in Need</h2>
+
+      {receivers.map((r) => (
+        <div key={r.id} style={styles.card}>
+          <div style={styles.header}>
+            <h3>{r.name}</h3>
+            <span style={styles.type}>{r.type}</span>
           </div>
+
+          <p style={styles.meta}>📍 {r.city}</p>
+
+          <p style={styles.desc}>
+            {r.description || "No description provided"}
+          </p>
+
+          <div style={styles.needs}>
+            <strong>Needs:</strong>{" "}
+            {Array.isArray(r.needs) && r.needs.length ? (
+              r.needs.map((n, i) => (
+                <span key={i} style={styles.tag}>{n}</span>
+              ))
+            ) : (
+              <span style={{ opacity: 0.6 }}>No needs specified</span>
+            )}
+          </div>
+
           <button
-            onClick={() => navigate(`/donate/${ngo.id}`)}
-            style={{ marginTop: 10, padding: "6px 12px", borderRadius: 6, border: "none", backgroundColor: "#F59E0B", color: "#fff", cursor: "pointer" }}
+            style={styles.btn}
+            onClick={() => navigate(`/donate/${r.id}`)}
           >
-            Donate Books
+            📚 Donate / Help
           </button>
         </div>
       ))}
     </div>
   );
 }
+
+/* ================= STYLES ================= */
+
+const styles = {
+  page: {
+    maxWidth: 800,
+    margin: "auto",
+    padding: 16,
+  },
+  heading: {
+    textAlign: "center",
+    marginBottom: 20,
+  },
+  card: {
+    background: "#fff",
+    padding: 16,
+    marginBottom: 14,
+    borderRadius: 14,
+    boxShadow: "0 6px 16px rgba(0,0,0,0.08)",
+  },
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  type: {
+    background: "#E0F2FE",
+    color: "#0369A1",
+    padding: "4px 8px",
+    borderRadius: 8,
+    fontSize: 12,
+  },
+  meta: {
+    fontSize: 13,
+    opacity: 0.7,
+  },
+  desc: {
+    margin: "8px 0 12px",
+  },
+  needs: {
+    marginBottom: 12,
+  },
+  tag: {
+    display: "inline-block",
+    background: "#FEF3C7",
+    color: "#92400E",
+    padding: "4px 8px",
+    borderRadius: 8,
+    marginRight: 6,
+    marginTop: 4,
+    fontSize: 13,
+  },
+  btn: {
+    width: "100%",
+    background: "#22C55E",
+    border: "none",
+    padding: "10px 14px",
+    borderRadius: 10,
+    color: "#fff",
+    fontSize: 15,
+    cursor: "pointer",
+  },
+};
+

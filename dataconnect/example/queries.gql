@@ -1,0 +1,24 @@
+mutation CreateStudyGroup($name: String!, $ownerId: UUID!, $description: String!) @auth(level: USER) {
+  studyGroup_insert(data: {name: $name, ownerId: $ownerId, description: $description, createdAt_expr: "request.time"})
+}
+
+query GetStudyGroupsByOwner($ownerId: UUID!) @auth(level: USER) {
+  studyGroups(where: {ownerId: {eq: $ownerId}}) {
+    id
+    name
+    description
+  }
+}
+
+mutation CreatePost($studentId: UUID!, $content: String!, $title: String!) @auth(level: USER) {
+  post_insert(data: {studentId: $studentId, content: $content, title: $title, createdAt_expr: "request.time"})
+}
+
+query GetPostsByStudent($studentId: UUID!) @auth(level: USER) {
+  posts(where: {studentId: {eq: $studentId}}) {
+    id
+    title
+    content
+    createdAt
+  }
+}
